@@ -1,0 +1,12 @@
+{
+  "name": "caderneta-contas",
+  "version": "1.0.0",
+  "description": "Caderneta — Gerenciador financeiro doméstico inteligente, recorrente e 100% funcional",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": ["finance", "contas", "recorrente", "gastos", "caderneta"],
+  "author": "Athena Growth Marketing",
+  "license": "MIT"
+}

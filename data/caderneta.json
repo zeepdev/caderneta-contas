@@ -1,0 +1,176 @@
+{
+  "categories": [
+    {
+      "id": "c-aluguel",
+      "name": "Aluguel & Moradia",
+      "color": "#2F5DB3",
+      "budget": 1500
+    },
+    {
+      "id": "c-casa",
+      "name": "Casa (luz, água, gás)",
+      "color": "#5B7F77",
+      "budget": 400
+    },
+    {
+      "id": "c-mercado",
+      "name": "Mercado & Feira",
+      "color": "#1E7B58",
+      "budget": 800
+    },
+    {
+      "id": "c-comb",
+      "name": "Combustível & Transporte",
+      "color": "#A8721A",
+      "budget": 350
+    },
+    {
+      "id": "c-farm",
+      "name": "Farmácia & Saúde",
+      "color": "#C0472F",
+      "budget": 200
+    },
+    {
+      "id": "c-lazer",
+      "name": "Lazer & Restaurante",
+      "color": "#7A5FB5",
+      "budget": 300
+    },
+    {
+      "id": "c-assin",
+      "name": "Assinaturas & Internet",
+      "color": "#8A6D3B",
+      "budget": 250
+    },
+    {
+      "id": "c-outros",
+      "name": "Outros & Imprevistos",
+      "color": "#6E7D83",
+      "budget": 200
+    }
+  ],
+  "fixed": [
+    {
+      "id": "f-aluguel",
+      "name": "Aluguel residencial",
+      "catId": "c-aluguel",
+      "dueDay": 5,
+      "value": 1200,
+      "active": true,
+      "recurrence": "monthly",
+      "variable": false,
+      "notes": "Pix imobiliária: aluguel@imobiliaria.com.br"
+    },
+    {
+      "id": "f-energia",
+      "name": "Energia elétrica (Enel / Cemig)",
+      "catId": "c-casa",
+      "dueDay": 10,
+      "value": 186.4,
+      "active": true,
+      "recurrence": "monthly",
+      "variable": true,
+      "monthValues": {
+        "2026-11": 204.5
+      },
+      "notes": "Débito em conta ou boleto digital"
+    },
+    {
+      "id": "f-agua",
+      "name": "Água e esgoto (Sabesp / Copasa)",
+      "catId": "c-casa",
+      "dueDay": 8,
+      "value": 78.9,
+      "active": true,
+      "recurrence": "monthly",
+      "variable": true,
+      "monthValues": {},
+      "notes": "Vencimento dia 8"
+    },
+    {
+      "id": "f-internet",
+      "name": "Internet Fibra 600 Mega",
+      "catId": "c-assin",
+      "dueDay": 15,
+      "value": 119.9,
+      "active": true,
+      "recurrence": "monthly",
+      "variable": false
+    },
+    {
+      "id": "f-stream",
+      "name": "Streaming (Netflix + Spotify)",
+      "catId": "c-assin",
+      "dueDay": 20,
+      "value": 65.8,
+      "active": true,
+      "recurrence": "monthly",
+      "variable": false
+    },
+    {
+      "id": "f-seguro",
+      "name": "Seguro do Carro (Parcelado)",
+      "catId": "c-comb",
+      "dueDay": 12,
+      "value": 185,
+      "active": true,
+      "recurrence": "installments",
+      "installments": {
+        "total": 10,
+        "startMonth": "2026-10"
+      },
+      "notes": "Porto Seguro — Parcela automática"
+    }
+  ],
+  "paidFixed": {
+    "2026-11": [
+      {
+        "id": "f-aluguel",
+        "paidAt": "2026-11-02",
+        "paidValue": 1200
+      }
+    ]
+  },
+  "vars": [
+    {
+      "id": "v1",
+      "date": "2026-11-01",
+      "catId": "c-mercado",
+      "desc": "Compras da semana (Hipermercado)",
+      "value": 245.8,
+      "status": "pago"
+    },
+    {
+      "id": "v2",
+      "date": "2026-11-01",
+      "catId": "c-comb",
+      "desc": "Gasolina aditivada (Posto Shell)",
+      "value": 150,
+      "status": "pago"
+    },
+    {
+      "id": "v3",
+      "date": "2026-11-02",
+      "catId": "c-mercado",
+      "desc": "Padaria e feira livre",
+      "value": 46.5,
+      "status": "pago"
+    },
+    {
+      "id": "v4",
+      "date": "2026-11-02",
+      "catId": "c-farm",
+      "desc": "Medicamentos na Drogaria",
+      "value": 62.9,
+      "status": "pago"
+    },
+    {
+      "id": "v5",
+      "date": "2026-11-02",
+      "catId": "c-lazer",
+      "desc": "Jantar em família (Pizzaria)",
+      "value": 88,
+      "status": "pendente"
+    }
+  ]
+}

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Caderneta — Contas de Casa</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231E7B58'/><path d='M8 10h16M8 16h16M8 22h10' stroke='%23FFF' stroke-width='2.6' stroke-linecap='round'/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="wrap">
+    <!-- Top Header -->
+    <header class="top">
+      <div class="brand">
+        <span class="mark">Caderneta</span><span class="dot"></span>
+        <small>contas de casa em ordem</small>
+      </div>
+      <div class="top-actions">
+        <span class="status-badge" id="syncStatus" title="Status de sincronização">
+          <span class="status-dot"></span> <span id="syncText">Pronto</span>
+        </span>
+        <button class="iconbtn" id="btnAjustes" title="Ajustes, backup e dados" aria-label="Ajustes">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Hero: Painel do Mês -->
+    <section class="hero">
+      <div class="mnav">
+        <div class="eyebrow-row">
+          <div class="eyebrow" id="eyebrowMes">mês em curso</div>
+          <button class="btn-hoje" id="btnIrHoje" style="display:none;" title="Voltar ao mês atual">Ir para hoje</button>
+        </div>
+        <div class="row">
+          <button class="arrow" id="mesAnt" aria-label="Mês anterior" title="Mês anterior (Seta esquerda)">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M15 18l-6-6 6-6"/>
+            </svg>
+          </button>
+          <h1 id="mesTitulo">novembro <span>2026</span></h1>
+          <button class="arrow" id="mesProx" aria-label="Próximo mês" title="Próximo mês (Seta direita)">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 18l6-6-6-6"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="stats">
+        <div class="stat">
+          <b id="stFixas">R$ 0,00</b>
+          <span>Contas fixas</span>
+        </div>
+        <div class="stat">
+          <b id="stVars">R$ 0,00</b>
+          <span>Variáveis</span>
+        </div>
+        <div class="stat hi" id="statFaltaBox">
+          <b id="stFalta">R$ 0,00</b>
+          <span>Falta pagar</span>
+        </div>
+      </div>
+      <div class="pago-line">
+        <div class="pago-bar"><i id="pagoFill" style="width:0%"></i></div>
+        <p>
+          <span id="pagoTxt">Pago R$ 0,00 de R$ 0,00</span>
+          <span id="vencTxt"></span>
+        </p>
+      </div>
+    </section>
+
+    <!-- Tabs de Navegação -->
+    <nav class="tabs" role="tablist">
+      <button class="tab on" data-tab="resumo">Resumo</button>
+      <button class="tab" data-tab="fixas">Contas fixas <span class="n" id="nFixas">0</span></button>
+      <button class="tab" data-tab="vars">Variáveis <span class="n" id="nVars">0</span></button>
+      <button class="tab" data-tab="cats">Categorias <span class="n" id="nCats">0</span></button>
+    </nav>
+
+    <!-- Conteúdo Dinâmico -->
+    <main id="conteudo"></main>
+
+    <!-- Rodapé -->
+    <footer class="app-footer">
+      <p class="foot-note"><b>Caderneta</b> · Seus dados ficam salvos de forma segura neste navegador e sincronizados no disco local.</p>
+      <div class="athena-credit">Developed by: <a href="https://athenagrowthmarketing.com" target="_blank" rel="noopener">Athena Growth Marketing</a></div>
+    </footer>
+  </div>
+
+  <!-- Toast de Notificações -->
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <!-- Script Principal -->
+  <script src="app.js"></script>
+</body>
+</html>
