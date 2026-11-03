@@ -807,11 +807,54 @@ nav.tabs::-webkit-scrollbar {
   display: flex;
   gap: 8px;
   align-items: center;
+  position: relative;
+  z-index: 2;
+}
+
+.mini-ic.undo-btn {
+  color: var(--muted);
+  border: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.mini-ic.undo-btn:hover {
+  color: var(--verm);
+  background: var(--verm-soft);
+  border-color: rgba(192, 71, 47, .25);
+}
+
+.pago-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+  flex-wrap: wrap;
+}
+
+.btn-estornar-badge {
+  background: #fff;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: all .15s;
+}
+
+.btn-estornar-badge:hover {
+  background: var(--verm-soft);
+  color: var(--verm);
+  border-color: rgba(192, 71, 47, .3);
 }
 
 .stamp {
   position: absolute;
-  right: 124px;
+  right: 175px;
   top: 50%;
   transform: translateY(-50%) rotate(-8deg);
   pointer-events: none;
@@ -823,10 +866,19 @@ nav.tabs::-webkit-scrollbar {
   border: 2.5px solid var(--verde);
   border-radius: 6px;
   color: var(--verde);
-  opacity: .9;
+  opacity: .95;
   text-transform: uppercase;
   box-shadow: inset 0 0 0 1.5px rgba(30, 123, 88, .25);
-  background: rgba(225, 240, 232, .55);
+  background: rgba(225, 240, 232, .75);
+  z-index: 1;
+}
+
+@media(max-width: 900px) {
+  .stamp {
+    right: 155px;
+    font-size: 13px;
+    padding: 3px 10px;
+  }
 }
 
 .fixa.pago .main {

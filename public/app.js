@@ -201,9 +201,13 @@ function seed() {
   };
 }
 
-/* ================= GERENCIAMENTO DE DADOS (SUPABASE + DISCO + LOCALSTORAGE) ================= */
+/* ================= GERENCIAMENTO DE DADOS (SUPABASE TEMPO REAL + LOCAL) ================= */
 let state = null;
 let lastServerTimestamp = 0;
+let lastLocalSaveTime = 0;
+let pendingRemoteData = null;
+let isRealtimeSubscribed = false;
+
 const view = {
   ym: hojeYM(),
   tab: 'resumo',
@@ -237,13 +241,60 @@ function saveLocal() {
   }
 }
 
-// Salva no Supabase (Nuvem universal acessível de qualquer dispositivo)
+// Aplica atualização remota de forma 100% segura (sem fechar modais ou perder digitação)
+function applyRemoteUpdate(remoteData, serverTimeIso) {
+  const serverTime = new Date(serverTimeIso).getTime();
+
+  // Se o servidor tiver dados mais antigos ou iguais ao que já temos, ignora
+  if (serverTime <= lastServerTimestamp) return;
+
+  // Se o usuário acabou de salvar localmente (menos de 1.5s), ignora eco da própria alteração
+  if (Date.now() - lastLocalSaveTime < 1500) return;
+
+  // Se o conteúdo for idêntico ao que já está em tela, só atualiza o timestamp
+  if (JSON.stringify(remoteData) === JSON.stringify(state)) {
+    lastServerTimestamp = serverTime;
+    return;
+  }
+
+  // Se houver um modal (dialog) aberto ou usuário digitando em algum campo, NÃO fecha o modal!
+  const hasOpenDialog = !!document.querySelector('dialog[open]');
+  const isTyping = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA');
+
+  if (hasOpenDialog || isTyping) {
+    // Guarda para aplicar assim que fechar o modal
+    pendingRemoteData = { data: remoteData, time: serverTime };
+    return;
+  }
+
+  // Aplica suavemente preservando posição da rolagem
+  const scrollY = window.scrollY;
+  const currentSearch = view.buscaVar;
+  
+  state = remoteData;
+  lastServerTimestamp = serverTime;
+  saveLocal();
+  render();
+  
+  window.scrollTo(0, scrollY);
+  
+  // Se o campo de busca estiver ativo, restaura
+  if (currentSearch) {
+    const sInp = document.getElementById('varSearchInput');
+    if (sInp) sInp.value = currentSearch;
+  }
+
+  toast('Sincronizado da nuvem em tempo real ⚡');
+}
+
+// Salva no Supabase com debouncing
 let saveSupabaseTimer = null;
 async function saveSupabase() {
   clearTimeout(saveSupabaseTimer);
   saveSupabaseTimer = setTimeout(async () => {
     if (!state) return;
     try {
+      lastLocalSaveTime = Date.now();
       const nowIso = new Date().toISOString();
       const res = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/caderneta_state?on_conflict=id`, {
         method: 'POST',
@@ -269,10 +320,9 @@ async function saveSupabase() {
     } catch (err) {
       updateSyncStatus('Salvo localmente (offline)', false);
     }
-  }, 400);
+  }, 350);
 }
 
-// Salva no disco local caso o servidor node.js esteja ativo
 function saveServerDisk() {
   if (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.hostname.startsWith('192.168.')) {
     fetch('/api/data', {
@@ -284,6 +334,7 @@ function saveServerDisk() {
 }
 
 function save() {
+  lastLocalSaveTime = Date.now();
   saveLocal();
   saveServerDisk();
   saveSupabase();
@@ -303,47 +354,70 @@ async function fetchFromSupabase() {
       if (rows && rows.length > 0 && rows[0].data) {
         const row = rows[0];
         const serverTime = new Date(row.updated_at).getTime();
-        if (serverTime >= lastServerTimestamp) {
-          state = row.data;
-          lastServerTimestamp = serverTime;
-          saveLocal();
-          updateSyncStatus('Nuvem Supabase conectada', true);
+        if (serverTime > lastServerTimestamp) {
+          applyRemoteUpdate(row.data, row.updated_at);
           return true;
         }
       }
     }
   } catch (err) {
-    // Falha de rede / offline
+    // Offline
   }
   return false;
 }
 
+// Configura WebSockets do Supabase para atualização em < 400ms
+function setupSupabaseRealtime() {
+  if (window.supabase && typeof window.supabase.createClient === 'function') {
+    try {
+      const sbClient = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
+      sbClient.channel('caderneta-realtime')
+        .on('postgres_changes', {
+          event: '*',
+          schema: 'public',
+          table: 'caderneta_state',
+          filter: 'id=eq.default'
+        }, payload => {
+          if (payload && payload.new && payload.new.data) {
+            applyRemoteUpdate(payload.new.data, payload.new.updated_at);
+          }
+        })
+        .subscribe(status => {
+          if (status === 'SUBSCRIBED') {
+            isRealtimeSubscribed = true;
+            updateSyncStatus('Tempo Real Ativo (WebSockets)', true);
+          }
+        });
+    } catch (e) {
+      // Fallback para polling
+    }
+  }
+}
+
 async function initData() {
-  // 1. Carrega local imediato para renderizar em 0ms
+  // 1. Carrega local imediato (0ms)
   let localData = loadLocal();
   if (localData && localData.fixed && localData.categories) {
     state = localData;
     render();
   }
 
-  // 2. Busca o estado mais recente na Nuvem Supabase
+  // 2. Busca na nuvem Supabase
   const loadedFromCloud = await fetchFromSupabase();
-  if (loadedFromCloud) {
-    render();
-  } else if (!state) {
-    // 3. Fallback se nada existir
+  if (!loadedFromCloud && !state) {
     state = seed();
     save();
     render();
   }
 
-  // 4. Polling inteligente a cada 8 segundos para sincronizar em tempo real quando aberto em múltiplos celulares/PCs
+  // 3. Conecta WebSocket em Tempo Real
+  setupSupabaseRealtime();
+
+  // 4. Polling inteligente de 5 em 5 segundos como garantia de conexão
   setInterval(async () => {
-    // Só atualiza silenciosamente se a aba estiver visível e nenhum modal aberto
-    if (document.hidden || document.querySelector('dialog[open]')) return;
-    const updated = await fetchFromSupabase();
-    if (updated) render();
-  }, 8000);
+    if (document.hidden) return; // Economiza rede e bateria se em segundo plano
+    await fetchFromSupabase();
+  }, 5000);
 }
 
 /* ================= HELPERS DO MODELO ================= */
@@ -691,8 +765,13 @@ function htmlFixas() {
       : `Mensal (todo mês)`;
 
     const pagoInfo = getPagoInfo(f);
-    const pagoMeta = pago && pagoInfo && pagoInfo.paidAt
-      ? `<small style="color:var(--verde);font-weight:600">Pago em ${fmtDiaSem(pagoInfo.paidAt)}</small>`
+    const pagoMeta = pago
+      ? `<div class="pago-meta-row">
+           <small style="color:var(--verde);font-weight:600">✓ Pago${pagoInfo && pagoInfo.paidAt ? ' em ' + fmtDiaSem(pagoInfo.paidAt) : ''}</small>
+           <button class="btn-estornar-badge" data-act="desmarcar" data-id="${f.id}" title="Reabrir / estornar pagamento">
+             ${IC.undo} Estornar
+           </button>
+         </div>`
       : '';
 
     return `
@@ -716,7 +795,7 @@ function htmlFixas() {
           ${parcelChip}
           <div class="acts">
             ${pago
-              ? `<button class="btn ghost mini" data-act="desmarcar" data-id="${f.id}" title="Reabrir / estornar pagamento">${IC.undo} Estornar</button>`
+              ? `<button class="mini-ic undo-btn" data-act="desmarcar" data-id="${f.id}" aria-label="Estornar pagamento" title="Estornar pagamento">${IC.undo}</button>`
               : `<button class="btn mini success" data-act="pagar" data-id="${f.id}" title="Confirmar pagamento">${IC.check} Paguei</button>`}
             
             <button class="mini-ic" data-act="val-mes" data-id="${f.id}" aria-label="Ajustar valor deste mês" title="Ajustar valor deste mês">
@@ -1479,7 +1558,14 @@ function dlgOpen(title, hint, bodyHTML, onSave, saveLabel) {
   d.querySelector('[data-x="s"]').onclick = () => {
     if (onSave(d) !== false) d.close();
   };
-  d.addEventListener('close', () => d.remove());
+  d.addEventListener('close', () => {
+    d.remove();
+    if (pendingRemoteData) {
+      const p = pendingRemoteData;
+      pendingRemoteData = null;
+      applyRemoteUpdate(p.data, new Date(p.time).toISOString());
+    }
+  });
   return d;
 }
 
@@ -1506,7 +1592,14 @@ function confirmDlg(title, msgHTML, onOk) {
     d.close();
     onOk();
   };
-  d.addEventListener('close', () => d.remove());
+  d.addEventListener('close', () => {
+    d.remove();
+    if (pendingRemoteData) {
+      const p = pendingRemoteData;
+      pendingRemoteData = null;
+      applyRemoteUpdate(p.data, new Date(p.time).toISOString());
+    }
+  });
 }
 
 /* ================= AJUSTES, BACKUP & EXPORTAÇÃO ================= */
