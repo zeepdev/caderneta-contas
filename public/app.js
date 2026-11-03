@@ -765,38 +765,53 @@ function htmlFixas() {
       : `Mensal (todo mês)`;
 
     const pagoInfo = getPagoInfo(f);
-    const pagoMeta = pago
-      ? `<div class="pago-meta-row">
-           <small style="color:var(--verde);font-weight:600">✓ Pago${pagoInfo && pagoInfo.paidAt ? ' em ' + fmtDiaSem(pagoInfo.paidAt) : ''}</small>
-           <button class="btn-estornar-badge" data-act="desmarcar" data-id="${f.id}" title="Reabrir / estornar pagamento">
-             ${IC.undo} Estornar
-           </button>
-         </div>`
+    const pagoDateText = pago && pagoInfo && pagoInfo.paidAt
+      ? `<span class="paid-date-badge">✓ Pago em ${fmtDiaSem(pagoInfo.paidAt)}</span>`
       : '';
+
+    // Status único, limpo e sem sobreposição
+    let statusBadge = '';
+    if (pago) {
+      statusBadge = `<div class="badge-pago-solid">PAGO</div>`;
+    } else if (st === 'vencido') {
+      statusBadge = `<span class="chip bad">Vencida</span>`;
+    } else if (st === 'a-vencer') {
+      statusBadge = `<span class="chip warn">A vencer</span>`;
+    } else {
+      statusBadge = `<span class="chip neutral">Em aberto</span>`;
+    }
 
     return `
       <div class="fixa ${pago ? 'pago' : ''} ${f.variable ? 'var' : ''} ${f.recurrence === 'installments' ? 'parcelada' : ''}">
         <div class="stub"></div>
         <div class="main">
-          ${pago ? '<span class="stamp">PAGO</span>' : ''}
           <div class="info">
             <span class="cat"><i style="background:${cat.color}"></i>${esc(cat.name)}</span>
             <b>${esc(f.name)}</b>
             <span>Vence todo dia ${f.dueDay} · ${recLabel} ${f.variable ? '· valor varia por mês' : ''}</span>
             ${f.notes ? `<div class="notes-preview" title="${esc(f.notes)}">${esc(f.notes)}</div>` : ''}
-            ${pagoMeta}
+            ${pagoDateText}
           </div>
+
           <div class="valor">
             ${estim && !pago ? '~ ' : ''}${fmtBRL(effVal(f))}
             <small>VENCE DIA ${pad2(f.dueDay)} ${estim && !pago ? '· ESTIMADO' : ''}</small>
           </div>
-          ${chip}
-          ${chipVal}
-          ${parcelChip}
+
+          <div class="status-col">
+            ${statusBadge}
+            ${chipVal}
+            ${parcelChip}
+          </div>
+
           <div class="acts">
             ${pago
-              ? `<button class="mini-ic undo-btn" data-act="desmarcar" data-id="${f.id}" aria-label="Estornar pagamento" title="Estornar pagamento">${IC.undo}</button>`
-              : `<button class="btn mini success" data-act="pagar" data-id="${f.id}" title="Confirmar pagamento">${IC.check} Paguei</button>`}
+              ? `<button class="btn ghost mini btn-estornar" data-act="desmarcar" data-id="${f.id}" title="Reabrir / estornar pagamento">
+                   ${IC.undo} Estornar
+                 </button>`
+              : `<button class="btn mini success" data-act="pagar" data-id="${f.id}" title="Confirmar pagamento">
+                   ${IC.check} Paguei
+                 </button>`}
             
             <button class="mini-ic" data-act="val-mes" data-id="${f.id}" aria-label="Ajustar valor deste mês" title="Ajustar valor deste mês">
               ${IC.coin}

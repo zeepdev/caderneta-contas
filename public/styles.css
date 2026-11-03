@@ -807,78 +807,60 @@ nav.tabs::-webkit-scrollbar {
   display: flex;
   gap: 8px;
   align-items: center;
-  position: relative;
-  z-index: 2;
+  flex-shrink: 0;
 }
 
-.mini-ic.undo-btn {
-  color: var(--muted);
-  border: 1px solid var(--line);
-  background: var(--bg);
-}
-
-.mini-ic.undo-btn:hover {
-  color: var(--verm);
-  background: var(--verm-soft);
-  border-color: rgba(192, 71, 47, .25);
-}
-
-.pago-meta-row {
+.status-col {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  margin-top: 5px;
-  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  min-width: 90px;
+  flex-shrink: 0;
 }
 
-.btn-estornar-badge {
-  background: #fff;
-  border: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 11.5px;
-  font-weight: 600;
-  padding: 2px 8px;
+.badge-pago-solid {
+  background: var(--verde);
+  color: #FFFFFF;
+  font-family: var(--mono);
+  font-weight: 800;
+  font-size: 12.5px;
+  letter-spacing: 0.22em;
+  padding: 6px 14px;
   border-radius: 6px;
+  text-transform: uppercase;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  cursor: pointer;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(30, 123, 88, 0.25);
+  user-select: none;
+  border: 1px solid var(--verde);
+}
+
+.paid-date-badge {
+  display: inline-block;
+  margin-top: 5px;
+  font-size: 11.5px;
+  color: var(--verde);
+  font-weight: 600;
+  background: var(--verde-soft);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.btn-estornar {
+  background: #fff;
+  border: 1.5px solid var(--line);
+  color: var(--muted);
+  font-weight: 600;
   transition: all .15s;
 }
 
-.btn-estornar-badge:hover {
+.btn-estornar:hover {
   background: var(--verm-soft);
   color: var(--verm);
   border-color: rgba(192, 71, 47, .3);
-}
-
-.stamp {
-  position: absolute;
-  right: 175px;
-  top: 50%;
-  transform: translateY(-50%) rotate(-8deg);
-  pointer-events: none;
-  font-family: var(--mono);
-  font-weight: 700;
-  font-size: 15px;
-  letter-spacing: .28em;
-  padding: 4px 14px 4px 16px;
-  border: 2.5px solid var(--verde);
-  border-radius: 6px;
-  color: var(--verde);
-  opacity: .95;
-  text-transform: uppercase;
-  box-shadow: inset 0 0 0 1.5px rgba(30, 123, 88, .25);
-  background: rgba(225, 240, 232, .75);
-  z-index: 1;
-}
-
-@media(max-width: 900px) {
-  .stamp {
-    right: 155px;
-    font-size: 13px;
-    padding: 3px 10px;
-  }
 }
 
 .fixa.pago .main {
@@ -1321,10 +1303,14 @@ footer.app-footer .foot-note b {
   .stat b {
     font-size: 17px;
   }
-  .stamp {
-    position: static;
-    transform: rotate(-6deg);
-    order: 5;
-    margin: 6px 0 0;
+  .fixa .main {
+    gap: 12px;
+    padding: 14px 14px;
+  }
+  .fixa .valor {
+    min-width: auto;
+  }
+  .fixa .acts {
+    gap: 6px;
   }
 }
