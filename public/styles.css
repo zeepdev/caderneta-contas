@@ -113,6 +113,14 @@ header.top {
   border-radius: 2px;
   transform: rotate(45deg);
   align-self: center;
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.2s ease;
+}
+
+.brand .dot:hover {
+  transform: rotate(45deg) scale(1.4);
+  background-color: #10593c;
 }
 
 .brand small {
@@ -1312,5 +1320,613 @@ footer.app-footer .foot-note b {
   }
   .fixa .acts {
     gap: 6px;
+  }
+}
+
+/* ================= ABA RESTRITA DE INVESTIMENTOS ================= */
+.tab.tab-invest {
+  background: var(--verde-soft);
+  border-color: #b9dfcf;
+  color: var(--verde-dark);
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tab.tab-invest:hover {
+  background: #d2ebe0;
+  border-color: var(--verde);
+}
+
+.tab.tab-invest.on {
+  background: var(--verde);
+  color: #fff;
+  border-color: var(--verde);
+}
+
+.invest-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  animation: fadeIn 0.25s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Header de Investimentos */
+.invest-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 16px 20px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+}
+
+.invest-head-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.invest-head-title h2 {
+  font-family: var(--disp);
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.invest-badge-secret {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #fdf3e2;
+  color: #8c5b08;
+  border: 1px solid #f2d49c;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.invest-head-title p {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.invest-head-acts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Simulador Temporal */
+.invest-sim {
+  background: linear-gradient(135deg, #16241e 0%, #1e332a 100%);
+  color: #e3ece8;
+  border-radius: var(--r);
+  padding: 16px 20px;
+  border: 1px solid #2d4c3f;
+  box-shadow: 0 4px 18px rgba(22, 36, 30, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.invest-sim-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.invest-sim-desc {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.invest-sim-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(30, 123, 88, 0.3);
+  border: 1px solid rgba(82, 196, 153, 0.4);
+  color: #6ee7b7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.invest-sim-text b {
+  display: block;
+  font-size: 14px;
+  color: #f1f7f4;
+  font-family: var(--disp);
+  font-weight: 700;
+}
+
+.invest-sim-text span {
+  font-size: 12px;
+  color: #9cb3a7;
+}
+
+.invest-sim-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.invest-sim-btn {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.08);
+  color: #d1e2da;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  transition: all 0.15s ease;
+}
+
+.invest-sim-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.invest-sim-btn.active {
+  background: #2cb67d;
+  color: #0b1a13;
+  border-color: #2cb67d;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(44, 182, 125, 0.35);
+}
+
+.invest-sim-date-input {
+  background: rgba(14, 26, 21, 0.85);
+  border: 1px solid #365b4c;
+  color: #fff;
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-family: var(--mono);
+  outline: none;
+}
+
+.invest-sim-date-input:focus {
+  border-color: #52c499;
+}
+
+.invest-sim-banner {
+  background: rgba(52, 211, 153, 0.12);
+  border: 1px solid rgba(52, 211, 153, 0.25);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 12px;
+  color: #a7f3d0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* Grid de Cards KPI */
+.invest-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.invest-kpi-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 16px 18px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.invest-kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+.invest-kpi-card.highlight {
+  border-color: #a3d9c3;
+  background: linear-gradient(180deg, #f7fbf9 0%, var(--card) 100%);
+}
+
+.invest-kpi-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.invest-kpi-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+}
+
+.invest-kpi-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+}
+
+.invest-kpi-val {
+  font-family: var(--mono);
+  font-size: 23px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.15;
+  letter-spacing: -0.5px;
+}
+
+.invest-kpi-val.green {
+  color: var(--verde);
+}
+
+.invest-kpi-val.amber {
+  color: #9c6708;
+}
+
+.invest-kpi-foot {
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.invest-kpi-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.invest-kpi-badge.green {
+  background: var(--verde-soft);
+  color: var(--verde-dark);
+}
+
+.invest-kpi-badge.amber {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+/* Categorias de Investimento */
+.invest-cats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.invest-cat-btn {
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 12.5px;
+  font-weight: 600;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--muted);
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.invest-cat-btn:hover {
+  border-color: var(--verde);
+  color: var(--ink);
+}
+
+.invest-cat-btn.active {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+}
+
+/* Card da Tabela de Aportes */
+.invest-table-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.invest-table-head {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  background: #fbfcfb;
+}
+
+.invest-table-head h3 {
+  font-family: var(--disp);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.invest-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.invest-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+  text-align: left;
+}
+
+.invest-table th {
+  background: #f4f7f5;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.invest-table td {
+  padding: 14px 14px;
+  border-bottom: 1px solid var(--line-light);
+  color: var(--ink);
+  vertical-align: middle;
+}
+
+.invest-table tr:last-child td {
+  border-bottom: none;
+}
+
+.invest-table tr:hover td {
+  background-color: #f8faf9;
+}
+
+.invest-cell-date {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--ink-light);
+  white-space: nowrap;
+}
+
+.invest-cell-date small {
+  display: block;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.invest-cell-cat {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 12px;
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.invest-cell-desc {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.invest-cell-desc small {
+  display: block;
+  font-size: 11.5px;
+  color: var(--muted);
+  font-weight: normal;
+}
+
+.invest-cell-num {
+  font-family: var(--mono);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.invest-cell-num.profit {
+  color: var(--verde);
+}
+
+.invest-cell-num.current {
+  font-weight: 700;
+  font-size: 14.5px;
+  color: var(--ink);
+}
+
+.invest-actions-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.invest-btn-sm {
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: #fff;
+  font-size: 12px;
+  color: var(--ink-light);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.invest-btn-sm:hover {
+  background: var(--line-light);
+  border-color: #b5c4bc;
+}
+
+.invest-btn-sm.withdraw {
+  background: #fff8eb;
+  border-color: #f7d69e;
+  color: #8c5b08;
+  font-weight: 600;
+}
+
+.invest-btn-sm.withdraw:hover {
+  background: #fdecc8;
+  border-color: #e5b967;
+}
+
+/* Tags de Resgate */
+.invest-withdrawn-tags {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.invest-withdrawn-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: #fdf5ea;
+  border: 1px solid #fae4c2;
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 11px;
+  color: #8f5a09;
+  font-family: var(--mono);
+}
+
+.invest-withdrawn-tag button {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #bf3c22;
+  font-size: 11px;
+  padding: 0;
+}
+
+/* Modal de PIN */
+.pin-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 0;
+}
+
+.pin-input {
+  width: 170px;
+  font-family: var(--mono);
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: 12px;
+  text-align: center;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 2px solid var(--line);
+  background: #f8faf9;
+  outline: none;
+}
+
+.pin-input:focus {
+  border-color: var(--verde);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(30, 123, 88, 0.15);
+}
+
+.pin-shake {
+  animation: shake 0.35s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+  border-color: var(--verm) !important;
+}
+
+@keyframes shake {
+  10%, 90% { transform: translate3d(-1px, 0, 0); }
+  20%, 80% { transform: translate3d(2px, 0, 0); }
+  30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+  40%, 60% { transform: translate3d(4px, 0, 0); }
+}
+
+.pin-quick-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  width: 220px;
+}
+
+.pin-key {
+  height: 44px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  font-family: var(--disp);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+  transition: all 0.12s ease;
+}
+
+.pin-key:hover {
+  background: #eef3f0;
+}
+
+.pin-key:active {
+  transform: scale(0.95);
+  background: #dfece5;
+}
+
+@media(max-width: 720px) {
+  .invest-head {
+    padding: 14px 14px;
+  }
+  .invest-sim {
+    padding: 14px 14px;
+  }
+  .invest-kpi-val {
+    font-size: 20px;
   }
 }

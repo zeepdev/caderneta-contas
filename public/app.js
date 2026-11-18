@@ -208,6 +208,18 @@ let lastLocalSaveTime = 0;
 let pendingRemoteData = null;
 let isRealtimeSubscribed = false;
 
+/* ================= ESTADO DE INVESTIMENTOS (RESTRITO & SEPARADO) ================= */
+const LS_INVEST_KEY = 'caderneta.investments.v1';
+let investmentsState = null;
+let isInvestUnlocked = sessionStorage.getItem('caderneta.invest.unlocked') === '1';
+let investSelectedDate = new Date().toISOString().split('T')[0];
+let investCategoryFilter = 'todas';
+let lastInvestServerTimestamp = 0;
+let lastInvestLocalSaveTime = 0;
+let isInvestRealtimeSubscribed = false;
+let pendingInvestRemoteData = null;
+let saveInvestSupabaseTimer = null;
+
 const view = {
   ym: hojeYM(),
   tab: 'resumo',
@@ -402,6 +414,9 @@ async function initData() {
     render();
   }
 
+  // 1b. Carrega investimentos local imediato (0ms)
+  loadInvestLocal();
+
   // 2. Busca na nuvem Supabase
   const loadedFromCloud = await fetchFromSupabase();
   if (!loadedFromCloud && !state) {
@@ -410,14 +425,22 @@ async function initData() {
     render();
   }
 
+  // 2b. Busca investimentos na nuvem Supabase
+  await fetchInvestmentsFromSupabase();
+
   // 3. Conecta WebSocket em Tempo Real
   setupSupabaseRealtime();
+  setupInvestmentsRealtime();
 
   // 4. Polling inteligente de 5 em 5 segundos como garantia de conexão
   setInterval(async () => {
     if (document.hidden) return; // Economiza rede e bateria se em segundo plano
     await fetchFromSupabase();
+    await fetchInvestmentsFromSupabase();
   }, 5000);
+
+  // 5. Verifica se a URL contém hash secreto (#invest ou #investimentos)
+  checkHashInvest();
 }
 
 /* ================= HELPERS DO MODELO ================= */
@@ -567,6 +590,16 @@ function render() {
   document.getElementById('nVars').textContent = varsDoMes().length;
   document.getElementById('nCats').textContent = state.categories.length;
 
+  const tabInvestEl = document.getElementById('tabInvest');
+  if (tabInvestEl) {
+    tabInvestEl.style.display = isInvestUnlocked ? 'inline-flex' : 'none';
+  }
+
+  const heroSec = document.querySelector('section.hero');
+  if (heroSec) {
+    heroSec.style.display = view.tab === 'invest' ? 'none' : '';
+  }
+
   document.querySelectorAll('.tab').forEach(t => {
     t.classList.toggle('on', t.dataset.tab === view.tab);
   });
@@ -576,6 +609,7 @@ function render() {
   if (view.tab === 'fixas')  c.innerHTML = htmlFixas();
   if (view.tab === 'vars')   c.innerHTML = htmlVars();
   if (view.tab === 'cats')   c.innerHTML = htmlCats();
+  if (view.tab === 'invest') c.innerHTML = htmlInvest();
 }
 
 /* ================= 1. TAB: RESUMO ================= */
@@ -1135,6 +1169,65 @@ document.addEventListener('click', e => {
       }
     );
   }
+
+  /* Ações da Carteira de Investimentos */
+  if (act === 'invest-novo') dlgInvestAporte();
+  if (act === 'invest-edit') {
+    const dep = (investmentsState.deposits || []).find(d => d.id === id);
+    if (dep) dlgInvestAporte(dep);
+  }
+  if (act === 'invest-del') {
+    const dep = (investmentsState.deposits || []).find(d => d.id === id);
+    if (!dep) return;
+    confirmDlg(
+      'Excluir Aporte',
+      `Tem certeza que deseja excluir o aporte <b>${esc(dep.description)}</b> (${fmtBRL(dep.amount)})? Esta ação não pode ser desfeita.`,
+      () => {
+        investmentsState.deposits = investmentsState.deposits.filter(d => d.id !== id);
+        saveInvestments();
+        render();
+        toast('Aporte excluído com sucesso.');
+      }
+    );
+  }
+  if (act === 'invest-withdraw') {
+    const dep = (investmentsState.deposits || []).find(d => d.id === id);
+    if (dep) dlgInvestWithdraw(dep);
+  }
+  if (act === 'invest-del-withdraw') {
+    const depId = b.dataset.depid;
+    const wid = b.dataset.wid;
+    const dep = (investmentsState.deposits || []).find(d => d.id === depId);
+    if (dep && Array.isArray(dep.withdrawals)) {
+      dep.withdrawals = dep.withdrawals.filter(w => w.id !== wid);
+      saveInvestments();
+      render();
+      toast('Resgate estornado com sucesso.');
+    }
+  }
+  if (act === 'invest-lock') lockInvestments();
+  if (act === 'invest-pin') dlgInvestPin();
+  if (act === 'invest-filter-cat') {
+    investCategoryFilter = b.dataset.cat || 'todas';
+    render();
+  }
+  if (act === 'invest-sim-quick') {
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (b.dataset.days != null) {
+      const dCount = Number(b.dataset.days);
+      investSelectedDate = dCount === 0 ? todayStr : addDays(todayStr, dCount);
+    } else if (b.dataset.months != null) {
+      investSelectedDate = addMonths(todayStr, Number(b.dataset.months));
+    }
+    render();
+  }
+});
+
+document.addEventListener('change', e => {
+  if (e.target && e.target.id === 'inpInvestDate') {
+    investSelectedDate = e.target.value || new Date().toISOString().split('T')[0];
+    render();
+  }
 });
 
 document.addEventListener('input', e => {
@@ -1580,6 +1673,11 @@ function dlgOpen(title, hint, bodyHTML, onSave, saveLabel) {
       pendingRemoteData = null;
       applyRemoteUpdate(p.data, new Date(p.time).toISOString());
     }
+    if (pendingInvestRemoteData) {
+      const pi = pendingInvestRemoteData;
+      pendingInvestRemoteData = null;
+      applyInvestRemoteUpdate(pi.data, new Date(pi.time).toISOString());
+    }
   });
   return d;
 }
@@ -1614,6 +1712,11 @@ function confirmDlg(title, msgHTML, onOk) {
       pendingRemoteData = null;
       applyRemoteUpdate(p.data, new Date(p.time).toISOString());
     }
+    if (pendingInvestRemoteData) {
+      const pi = pendingInvestRemoteData;
+      pendingInvestRemoteData = null;
+      applyInvestRemoteUpdate(pi.data, new Date(pi.time).toISOString());
+    }
   });
 }
 
@@ -1638,6 +1741,9 @@ document.getElementById('btnAjustes').onclick = () => {
         </button>
         <button class="btn danger" id="ajWipe" style="justify-content:flex-start">
           Apagar todos os dados
+        </button>
+        <button class="btn ghost" id="ajInvest" style="justify-content:flex-start;border-top:1px dashed var(--line);margin-top:6px;padding-top:10px">
+          🔒 Área Restrita (Investimentos)
         </button>
         <input type="file" id="ajFile" accept=".json,application/json" style="display:none">
       </div>
@@ -1695,6 +1801,14 @@ document.getElementById('btnAjustes').onclick = () => {
       toast('Dados limpos. Começo zerado!');
     });
   };
+
+  const bInvest = d.querySelector('#ajInvest');
+  if (bInvest) {
+    bInvest.onclick = () => {
+      d.close();
+      promptInvestUnlock();
+    };
+  }
 };
 
 function download(nome, conteudo, tipo) {
@@ -1735,6 +1849,1029 @@ function exportCsv() {
   download(`caderneta-${view.ym}.csv`, '\uFEFF' + linhas.join('\n'), 'text/csv;charset=utf-8');
   toast('Planilha CSV gerada com sucesso.');
 }
+
+/* ================= MÓDULO RESTRITO: INVESTIMENTOS & JUROS COMPOSTOS ================= */
+
+function defaultInvestmentsState() {
+  return {
+    pin: '1234',
+    defaultRate: 10,
+    categories: ['Investimento Principal', 'Renda Fixa', 'Ações', 'Reserva de Emergência'],
+    deposits: []
+  };
+}
+
+function loadInvestLocal() {
+  if (!storageOk) return null;
+  try {
+    const raw = localStorage.getItem(LS_INVEST_KEY);
+    if (raw) {
+      investmentsState = JSON.parse(raw);
+      return investmentsState;
+    }
+  } catch (e) {}
+  investmentsState = defaultInvestmentsState();
+  return investmentsState;
+}
+
+function saveInvestLocal() {
+  if (storageOk && investmentsState) {
+    try {
+      localStorage.setItem(LS_INVEST_KEY, JSON.stringify(investmentsState));
+    } catch (e) {}
+  }
+}
+
+async function saveInvestSupabase() {
+  clearTimeout(saveInvestSupabaseTimer);
+  saveInvestSupabaseTimer = setTimeout(async () => {
+    if (!investmentsState) return;
+    try {
+      lastInvestLocalSaveTime = Date.now();
+      const nowIso = new Date().toISOString();
+      const res = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/investments_state?on_conflict=id`, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPABASE_CONFIG.anonKey,
+          'Authorization': `Bearer ${SUPABASE_CONFIG.anonKey}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates,return=minimal'
+        },
+        body: JSON.stringify({
+          id: 'default',
+          data: investmentsState,
+          updated_at: nowIso
+        })
+      });
+      if (res.ok) {
+        lastInvestServerTimestamp = new Date(nowIso).getTime();
+      }
+    } catch (err) {
+      console.warn('Investments Supabase sync offline:', err);
+    }
+  }, 400);
+}
+
+function saveInvestments() {
+  lastInvestLocalSaveTime = Date.now();
+  saveInvestLocal();
+  saveInvestSupabase();
+}
+
+async function fetchInvestmentsFromSupabase() {
+  try {
+    const res = await fetch(`${SUPABASE_CONFIG.url}/rest/v1/investments_state?id=eq.default&select=data,updated_at`, {
+      headers: {
+        'apikey': SUPABASE_CONFIG.anonKey,
+        'Authorization': `Bearer ${SUPABASE_CONFIG.anonKey}`
+      }
+    });
+
+    if (res.ok) {
+      const rows = await res.json();
+      if (rows && rows.length > 0 && rows[0].data) {
+        const row = rows[0];
+        const serverTime = new Date(row.updated_at).getTime();
+        if (serverTime > lastInvestServerTimestamp) {
+          applyInvestRemoteUpdate(row.data, row.updated_at);
+          return true;
+        }
+      }
+    }
+  } catch (err) {
+    // Offline
+  }
+  return false;
+}
+
+function setupInvestmentsRealtime() {
+  if (window.supabase && typeof window.supabase.createClient === 'function') {
+    try {
+      const sbClient = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
+      sbClient.channel('investments-realtime')
+        .on('postgres_changes', {
+          event: '*',
+          schema: 'public',
+          table: 'investments_state',
+          filter: 'id=eq.default'
+        }, payload => {
+          if (payload && payload.new && payload.new.data) {
+            applyInvestRemoteUpdate(payload.new.data, payload.new.updated_at);
+          }
+        })
+        .subscribe();
+    } catch (e) {}
+  }
+}
+
+function applyInvestRemoteUpdate(remoteData, serverTimeIso) {
+  const serverTime = new Date(serverTimeIso).getTime();
+  if (serverTime <= lastInvestServerTimestamp) return;
+  if (Date.now() - lastInvestLocalSaveTime < 1500) return;
+  if (JSON.stringify(remoteData) === JSON.stringify(investmentsState)) {
+    lastInvestServerTimestamp = serverTime;
+    return;
+  }
+
+  const hasOpenDialog = !!document.querySelector('dialog[open]');
+  const isTyping = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA');
+
+  if (hasOpenDialog || isTyping) {
+    pendingInvestRemoteData = { data: remoteData, time: serverTime };
+    return;
+  }
+
+  investmentsState = remoteData;
+  lastInvestServerTimestamp = serverTime;
+  saveInvestLocal();
+  if (view.tab === 'invest') {
+    render();
+  }
+}
+
+/* Helpers de Matemática Financeira e Projeção */
+function getElapsedDays(startDateStr, targetDateStr) {
+  if (!startDateStr || !targetDateStr || targetDateStr < startDateStr) return 0;
+  const [sY, sM, sD] = startDateStr.split('-').map(Number);
+  const [tY, tM, tD] = targetDateStr.split('-').map(Number);
+  const dStart = new Date(Date.UTC(sY, sM - 1, sD));
+  const dTarget = new Date(Date.UTC(tY, tM - 1, tD));
+  const diffTime = dTarget.getTime() - dStart.getTime();
+  return Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24)));
+}
+
+function addDays(dateStr, days) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + days));
+  return dt.toISOString().split('T')[0];
+}
+
+function addMonths(dateStr, months) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1 + months, d));
+  return dt.toISOString().split('T')[0];
+}
+
+function formatDateBR(dateStr) {
+  if (!dateStr) return '-';
+  const parts = dateStr.split('-');
+  if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  return dateStr;
+}
+
+function calculateDepositStats(deposit, targetDateStr = investSelectedDate) {
+  const initialAmount = Number(deposit.amount) || 0;
+  const ratePercent = Number(deposit.monthly_rate ?? 10) / 100;
+  const type = deposit.compounding_type === 'monthly_strict' ? 'monthly' : 'daily';
+  const rawWithdrawals = Array.isArray(deposit.withdrawals) ? deposit.withdrawals : [];
+
+  const dailyRate = Math.pow(1 + ratePercent, 1 / 30) - 1; // 10% a.m. = ~0.3182% ao dia
+
+  if (!deposit.date || targetDateStr < deposit.date) {
+    return {
+      initialAmount,
+      currentValue: initialAmount,
+      totalYield: 0,
+      totalWithdrawn: 0,
+      dailyGain: 0,
+      dailyRatePercent: dailyRate * 100,
+      daysActive: 0,
+      ratePercent: ratePercent * 100,
+      compoundingType: type,
+      withdrawals: []
+    };
+  }
+
+  const activeWithdrawals = rawWithdrawals
+    .filter(w => w.date && w.date <= targetDateStr && w.date >= deposit.date)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const totalWithdrawn = activeWithdrawals.reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
+  const [sYear, sMonth, sDay] = deposit.date.split('-').map(Number);
+  const daysActive = getElapsedDays(deposit.date, targetDateStr);
+
+  let currentBalance = initialAmount;
+
+  if (type === 'daily') {
+    const dStart = new Date(Date.UTC(sYear, sMonth - 1, sDay));
+    for (let day = 1; day <= daysActive; day++) {
+      const curTime = dStart.getTime() + day * 24 * 60 * 60 * 1000;
+      const curDateObj = new Date(curTime);
+      const curDateStr = curDateObj.toISOString().split('T')[0];
+
+      if (currentBalance > 0) {
+        currentBalance = currentBalance * (1 + dailyRate);
+      }
+
+      const withsOnDay = activeWithdrawals.filter(w => w.date === curDateStr);
+      for (const w of withsOnDay) {
+        currentBalance = Math.max(0, currentBalance - (Number(w.amount) || 0));
+      }
+    }
+  } else {
+    // monthly compounding
+    const [tYear, tMonth, tDay] = targetDateStr.split('-').map(Number);
+    let yearsDiff = tYear - sYear;
+    let monthsDiff = tMonth - sMonth;
+    let totalMonths = yearsDiff * 12 + monthsDiff;
+    const maxDays = new Date(tYear, tMonth, 0).getDate();
+    if (tDay < Math.min(sDay, maxDays)) totalMonths -= 1;
+    totalMonths = Math.max(0, totalMonths);
+
+    for (let m = 1; m <= totalMonths; m++) {
+      if (currentBalance > 0) {
+        currentBalance = currentBalance * (1 + ratePercent);
+      }
+    }
+    for (const w of activeWithdrawals) {
+      currentBalance = Math.max(0, currentBalance - (Number(w.amount) || 0));
+    }
+  }
+
+  const totalYield = Math.max(0, (currentBalance + totalWithdrawn) - initialAmount);
+  const dailyGain = currentBalance * dailyRate;
+
+  return {
+    initialAmount,
+    currentValue: currentBalance,
+    totalYield,
+    totalWithdrawn,
+    dailyGain,
+    dailyRatePercent: dailyRate * 100,
+    daysActive,
+    ratePercent: ratePercent * 100,
+    compoundingType: type,
+    withdrawals: activeWithdrawals
+  };
+}
+
+function calculatePortfolioStats(deposits, targetDateStr = investSelectedDate) {
+  let totalInvested = 0;
+  let currentValue = 0;
+  let totalYield = 0;
+  let totalWithdrawn = 0;
+  let totalDailyGain = 0;
+  let depositDetails = [];
+
+  for (const dep of deposits) {
+    const stats = calculateDepositStats(dep, targetDateStr);
+    totalInvested += stats.initialAmount;
+    currentValue += stats.currentValue;
+    totalYield += stats.totalYield;
+    totalWithdrawn += stats.totalWithdrawn;
+    totalDailyGain += stats.dailyGain;
+
+    depositDetails.push({
+      ...dep,
+      stats
+    });
+  }
+
+  return {
+    totalInvested,
+    currentValue,
+    totalYield,
+    totalWithdrawn,
+    totalDailyGain,
+    profitabilityPercentage: totalInvested > 0 ? (totalYield / totalInvested) * 100 : 0,
+    depositDetails
+  };
+}
+
+/* Renderização HTML da Aba de Investimentos */
+function htmlInvest() {
+  if (!investmentsState) {
+    return `<div class="empty" style="padding:40px 10px;">
+      <b>Carregando investimentos...</b>
+    </div>`;
+  }
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const isFuture = investSelectedDate > todayStr;
+  const isPast = investSelectedDate < todayStr;
+  const isToday = investSelectedDate === todayStr;
+
+  const rawDeposits = investmentsState.deposits || [];
+  const filteredDeposits = investCategoryFilter === 'todas'
+    ? rawDeposits
+    : rawDeposits.filter(d => d.category === investCategoryFilter);
+
+  const stats = calculatePortfolioStats(filteredDeposits, investSelectedDate);
+  const allStats = calculatePortfolioStats(rawDeposits, investSelectedDate);
+
+  const cats = ['todas', ...(investmentsState.categories || [])];
+  const catPills = cats.map(c => `
+    <button class="invest-cat-btn ${investCategoryFilter === c ? 'active' : ''}" data-act="invest-filter-cat" data-cat="${esc(c)}">
+      ${c === 'todas' ? 'Todas as Categorias' : esc(c)}
+    </button>
+  `).join('');
+
+  const simBanner = !isToday ? `
+    <div class="invest-sim-banner">
+      <span>
+        ⏳ <b>Simulação Ativa:</b> Exibindo projeção com rendimento até <b>${formatDateBR(investSelectedDate)}</b> 
+        (${isFuture ? `+${getElapsedDays(todayStr, investSelectedDate)} dias no futuro` : `${getElapsedDays(investSelectedDate, todayStr)} dias no passado`}).
+      </span>
+      <button class="invest-sim-btn active" data-act="invest-sim-quick" data-days="0" style="padding:4px 10px;font-size:11px">
+        Voltar para Hoje
+      </button>
+    </div>
+  ` : '';
+
+  let rowsHTML = '';
+  if (filteredDeposits.length === 0) {
+    rowsHTML = `
+      <tr>
+        <td colspan="7" style="text-align:center;padding:36px 14px;color:var(--muted)">
+          <div style="font-size:32px;margin-bottom:8px">📈</div>
+          <b style="color:var(--ink);font-size:15px;display:block;margin-bottom:4px">Nenhum aporte registrado ${investCategoryFilter !== 'todas' ? 'nesta categoria' : 'na carteira'}</b>
+          <p style="font-size:13px;max-width:380px;margin:0 auto 16px">Adicione seu capital para ver o rendimento diário proporcional a 10% ao mês rendendo automaticamente.</p>
+          <button class="btn" data-act="invest-novo" style="margin:0 auto">
+            ${IC.plus} Registrar Primeiro Aporte
+          </button>
+        </td>
+      </tr>
+    `;
+  } else {
+    rowsHTML = stats.depositDetails.map(dep => {
+      const dStats = dep.stats;
+      const daysPassed = dStats.daysActive;
+      const withdrawals = dep.withdrawals || [];
+
+      const withdrawalsListHTML = withdrawals.length > 0 ? `
+        <div class="invest-withdrawn-tags">
+          ${withdrawals.map(w => `
+            <span class="invest-withdrawn-tag">
+              <span>💵 Resgate: -${fmtBRL(w.amount)} (${formatDateBR(w.date)})${w.description ? ` · ${esc(w.description)}` : ''}</span>
+              <button data-act="invest-del-withdraw" data-depid="${esc(dep.id)}" data-wid="${esc(w.id)}" title="Estornar resgate">×</button>
+            </span>
+          `).join('')}
+        </div>
+      ` : '';
+
+      return `
+        <tr>
+          <td class="invest-cell-date">
+            <b>${formatDateBR(dep.date)}</b>
+            <small>${daysPassed} dia${daysPassed === 1 ? '' : 's'} decorrido${daysPassed === 1 ? '' : 's'}</small>
+          </td>
+          <td>
+            <span class="invest-cell-cat" style="background:var(--verde-soft);color:var(--verde-dark);border:1px solid #bde1d3">
+              ${esc(dep.category || 'Geral')}
+            </span>
+          </td>
+          <td class="invest-cell-desc">
+            ${esc(dep.description || 'Aporte de Capital')}
+            <small>Taxa: ${dep.monthly_rate ?? 10}% a.m. (${dep.compounding_type === 'monthly_strict' ? 'Mensal' : 'Juros Diários'})</small>
+            ${withdrawalsListHTML}
+          </td>
+          <td class="invest-cell-num">
+            ${fmtBRL(dep.amount)}
+            ${dStats.totalWithdrawn > 0 ? `<small style="display:block;color:#92400e;font-size:10.5px">Resgatado: ${fmtBRL(dStats.totalWithdrawn)}</small>` : ''}
+          </td>
+          <td class="invest-cell-num profit">
+            +${fmtBRL(dStats.totalYield)}
+            <small style="display:block;color:var(--verde);font-size:10.5px">
+              +${dep.amount > 0 ? ((dStats.totalYield / dep.amount) * 100).toFixed(1) : 0}%
+            </small>
+          </td>
+          <td class="invest-cell-num current">
+            ${fmtBRL(dStats.currentValue)}
+            <small style="display:block;color:var(--muted);font-size:10.5px">+${fmtBRL(dStats.dailyGain)}/dia</small>
+          </td>
+          <td>
+            <div class="invest-actions-cell">
+              <button class="invest-btn-sm withdraw" data-act="invest-withdraw" data-id="${esc(dep.id)}" title="Realizar resgate parcial ou total" ${dStats.currentValue <= 0 ? 'disabled style="opacity:0.5;cursor:not-allowed"' : ''}>
+                💵 Resgatar
+              </button>
+              <button class="invest-btn-sm" data-act="invest-edit" data-id="${esc(dep.id)}" title="Editar aporte">
+                ${IC.edit}
+              </button>
+              <button class="invest-btn-sm" data-act="invest-del" data-id="${esc(dep.id)}" title="Excluir aporte" style="color:var(--verm)">
+                ${IC.trash}
+              </button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  return `
+    <div class="invest-wrap">
+      <!-- Header de Investimentos -->
+      <div class="invest-head">
+        <div class="invest-head-title">
+          <h2>
+            <span>Investimentos & Patrimônio</span>
+            <span class="invest-badge-secret">🔒 Área Restrita</span>
+          </h2>
+          <p>Rendimento contínuo dia a dia proporcional a 10%/mês (~0,318% a cada 24h).</p>
+        </div>
+        <div class="invest-head-acts">
+          <button class="btn" data-act="invest-novo">
+            ${IC.plus} Novo Aporte
+          </button>
+          <button class="btn ghost" data-act="invest-pin" title="Alterar PIN de 4 dígitos">
+            🔑 Alterar PIN
+          </button>
+          <button class="btn ghost" data-act="invest-lock" title="Bloquear e ocultar carteira" style="color:var(--verm)">
+            🔒 Bloquear
+          </button>
+        </div>
+      </div>
+
+      <!-- Simulador Temporal ("Viagem no Tempo") -->
+      <div class="invest-sim">
+        <div class="invest-sim-top">
+          <div class="invest-sim-desc">
+            <div class="invest-sim-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 16 14"/>
+              </svg>
+            </div>
+            <div class="invest-sim-text">
+              <b>Simulador de Viagem no Tempo</b>
+              <span>Consulte o valor do seu patrimônio hoje ou projete qualquer data futura:</span>
+            </div>
+          </div>
+          <div class="invest-sim-controls">
+            <button class="invest-sim-btn ${isToday ? 'active' : ''}" data-act="invest-sim-quick" data-days="0">Hoje</button>
+            <button class="invest-sim-btn" data-act="invest-sim-quick" data-days="30">+30 Dias</button>
+            <button class="invest-sim-btn" data-act="invest-sim-quick" data-months="3">+3 Meses</button>
+            <button class="invest-sim-btn" data-act="invest-sim-quick" data-months="6">+6 Meses</button>
+            <button class="invest-sim-btn" data-act="invest-sim-quick" data-months="12">+1 Ano</button>
+            <input type="date" class="invest-sim-date-input" id="inpInvestDate" value="${investSelectedDate}" title="Escolher data exata">
+          </div>
+        </div>
+        ${simBanner}
+      </div>
+
+      <!-- Grid de 4 Cards KPI -->
+      <div class="invest-kpi-grid">
+        <!-- Card 1: Total Aportado -->
+        <div class="invest-kpi-card">
+          <div class="invest-kpi-head">
+            <span class="invest-kpi-label">Total Aportado</span>
+            <div class="invest-kpi-icon" style="background:#eaf4ef;color:var(--verde)">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="4" width="20" height="16" rx="2"/>
+                <path d="M7 15h0M2 10h20"/>
+              </svg>
+            </div>
+          </div>
+          <div class="invest-kpi-val">${fmtBRL(allStats.totalInvested)}</div>
+          <div class="invest-kpi-foot">
+            <span>Capital principal aportado</span>
+            ${allStats.totalWithdrawn > 0 ? `<span class="invest-kpi-badge amber">Retirado: ${fmtBRL(allStats.totalWithdrawn)}</span>` : ''}
+          </div>
+        </div>
+
+        <!-- Card 2: Lucro Líquido Acumulado -->
+        <div class="invest-kpi-card highlight">
+          <div class="invest-kpi-head">
+            <span class="invest-kpi-label">Lucro Líquido</span>
+            <div class="invest-kpi-icon" style="background:#d9f1e6;color:var(--verde-dark)">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+                <polyline points="17 6 23 6 23 12"/>
+              </svg>
+            </div>
+          </div>
+          <div class="invest-kpi-val green">+${fmtBRL(allStats.totalYield)}</div>
+          <div class="invest-kpi-foot">
+            <span class="invest-kpi-badge green">+${allStats.profitabilityPercentage.toFixed(1)}%</span>
+            <span>lucro sobre o capital</span>
+          </div>
+        </div>
+
+        <!-- Card 3: Saldo Atual / Patrimônio -->
+        <div class="invest-kpi-card highlight" style="border-color:#52c499">
+          <div class="invest-kpi-head">
+            <span class="invest-kpi-label" style="color:var(--verde-dark)">
+              Saldo Atual ${isFuture ? '(Simulado)' : ''}
+            </span>
+            <div class="invest-kpi-icon" style="background:var(--verde);color:#fff">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="1" x2="12" y2="23"/>
+                <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+              </svg>
+            </div>
+          </div>
+          <div class="invest-kpi-val green" style="font-size:26px">${fmtBRL(allStats.currentValue)}</div>
+          <div class="invest-kpi-foot">
+            <span class="invest-kpi-badge green">⚡ Atualiza todo dia</span>
+            <span>Patrimônio líquido acumulado</span>
+          </div>
+        </div>
+
+        <!-- Card 4: Rendimento Diário (+R$/dia) -->
+        <div class="invest-kpi-card">
+          <div class="invest-kpi-head">
+            <span class="invest-kpi-label">Rendimento Diário</span>
+            <div class="invest-kpi-icon" style="background:#fef3c7;color:#b45309">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+              </svg>
+            </div>
+          </div>
+          <div class="invest-kpi-val amber">+${fmtBRL(allStats.totalDailyGain)} <span style="font-size:13px;color:var(--muted);font-weight:normal">/dia</span></div>
+          <div class="invest-kpi-foot">
+            <span>Ganhando ~0,32% a cada 24 horas (10% ao mês)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filtro de Categorias -->
+      <div class="invest-cats">
+        ${catPills}
+      </div>
+
+      <!-- Tabela de Aportes -->
+      <div class="invest-table-card">
+        <div class="invest-table-head">
+          <h3>
+            <span>Tabela de Aportes</span>
+            <span class="chip neutral" style="font-weight:700">${filteredDeposits.length} aporte${filteredDeposits.length === 1 ? '' : 's'}</span>
+          </h3>
+          <button class="btn" data-act="invest-novo" style="padding:6px 12px;font-size:12.5px">
+            ${IC.plus} Novo Aporte
+          </button>
+        </div>
+        <div class="invest-table-wrap">
+          <table class="invest-table">
+            <thead>
+              <tr>
+                <th>Data do Aporte</th>
+                <th>Categoria</th>
+                <th>Descrição / Regime</th>
+                <th>Aporte Inicial</th>
+                <th>Lucro Acumulado</th>
+                <th>Saldo Disponível</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHTML}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/* Modais de Desbloqueio, Aportes, Resgates e PIN */
+function promptInvestUnlock() {
+  const currentPin = (investmentsState && investmentsState.pin) || '1234';
+
+  const d = dlgOpen(
+    'Área Restrita — Investimentos',
+    'Digite seu PIN de 4 dígitos para acessar a sua carteira secreta:',
+    `
+      <div class="pin-box">
+        <input type="password" maxlength="4" pattern="[0-9]*" inputmode="numeric" id="pinInput" class="pin-input" autofocus placeholder="••••" autocomplete="off">
+        <div class="pin-quick-grid">
+          ${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button type="button" class="pin-key" data-k="${n}">${n}</button>`).join('')}
+          <button type="button" class="pin-key" data-k="clear" style="font-size:14px;color:var(--verm)">Apagar</button>
+          <button type="button" class="pin-key" data-k="0">0</button>
+          <button type="button" class="pin-key" data-k="ok" style="font-size:14px;color:var(--verde);background:#eaf7f1">OK</button>
+        </div>
+      </div>
+    `,
+    dModal => {
+      const val = dModal.querySelector('#pinInput').value.trim();
+      if (val === currentPin) {
+        isInvestUnlocked = true;
+        sessionStorage.setItem('caderneta.invest.unlocked', '1');
+        const tabEl = document.getElementById('tabInvest');
+        if (tabEl) tabEl.style.display = 'inline-flex';
+        view.tab = 'invest';
+        render();
+        toast('Carteira de investimentos desbloqueada 📈');
+        return true;
+      } else {
+        const inp = dModal.querySelector('#pinInput');
+        inp.classList.remove('pin-shake');
+        void inp.offsetWidth;
+        inp.classList.add('pin-shake');
+        inp.value = '';
+        toast('PIN incorreto! Tente novamente.');
+        return false;
+      }
+    },
+    'Acessar Carteira'
+  );
+
+  const inp = d.querySelector('#pinInput');
+  setTimeout(() => inp && inp.focus(), 80);
+
+  d.querySelectorAll('.pin-key').forEach(k => {
+    k.onclick = () => {
+      const key = k.dataset.k;
+      if (key === 'clear') {
+        inp.value = '';
+      } else if (key === 'ok') {
+        d.querySelector('[data-x="s"]').click();
+      } else {
+        if (inp.value.length < 4) {
+          inp.value += key;
+          if (inp.value.length === 4) {
+            setTimeout(() => d.querySelector('[data-x="s"]').click(), 120);
+          }
+        }
+      }
+    };
+  });
+
+  inp.onkeydown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      d.querySelector('[data-x="s"]').click();
+    }
+  };
+}
+
+function lockInvestments() {
+  isInvestUnlocked = false;
+  sessionStorage.removeItem('caderneta.invest.unlocked');
+  const tabEl = document.getElementById('tabInvest');
+  if (tabEl) tabEl.style.display = 'none';
+  view.tab = 'resumo';
+  render();
+  toast('Investimentos bloqueados e ocultos 🔒');
+}
+
+function dlgInvestAporte(editDep) {
+  const isEdit = Boolean(editDep);
+  const curCats = (investmentsState && investmentsState.categories) || ['Investimento Principal', 'Renda Fixa', 'Ações', 'Reserva'];
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  const defaultDesc = isEdit ? editDep.description : '';
+  const defaultCat = isEdit ? editDep.category : (curCats[0] || 'Investimento Principal');
+  const defaultVal = isEdit ? Number(editDep.amount || 0).toFixed(2) : '';
+  const defaultDate = isEdit ? editDep.date : todayStr;
+  const defaultRate = isEdit ? (editDep.monthly_rate ?? 10) : 10;
+  const defaultType = isEdit ? (editDep.compounding_type || 'daily') : 'daily';
+
+  const catOptions = curCats.map(c => `<option value="${esc(c)}" ${c === defaultCat ? 'selected' : ''}>${esc(c)}</option>`).join('');
+
+  const d = dlgOpen(
+    isEdit ? 'Editar Aporte de Capital' : 'Novo Aporte de Capital',
+    'Informe os dados do investimento. O rendimento é calculado todo dia com base na taxa mensal informada:',
+    `
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <label class="field">
+          <span>Descrição do investimento</span>
+          <input type="text" id="invDesc" class="field-inp" placeholder="Ex: Aporte Principal, CDB 10% a.m." value="${esc(defaultDesc)}">
+        </label>
+        
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <label class="field">
+            <span>Categoria</span>
+            <select id="invCatSelect" class="field-inp">
+              ${catOptions}
+              <option value="__nova__">+ Criar nova categoria...</option>
+            </select>
+          </label>
+          <label class="field" id="boxNovaCat" style="display:none">
+            <span>Nome da nova categoria</span>
+            <input type="text" id="invNovaCat" class="field-inp" placeholder="Ex: Cripto, Imobiliário">
+          </label>
+          <label class="field">
+            <span>Data do Aporte</span>
+            <input type="date" id="invDate" class="field-inp" value="${defaultDate}">
+          </label>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <label class="field">
+            <span>Valor Aportado (R$)</span>
+            <input type="number" step="0.01" min="0.01" id="invAmount" class="field-inp" placeholder="1000,00" value="${defaultVal}">
+          </label>
+          <label class="field">
+            <span>Rentabilidade (% ao mês)</span>
+            <input type="number" step="0.1" min="0.1" id="invRate" class="field-inp" value="${defaultRate}">
+          </label>
+        </div>
+
+        <label class="field">
+          <span>Regime de Juros</span>
+          <select id="invType" class="field-inp">
+            <option value="daily" ${defaultType === 'daily' ? 'selected' : ''}>⚡ Juros Diários Compostos (~0,318% ao dia - Recomendado)</option>
+            <option value="monthly_strict" ${defaultType === 'monthly_strict' ? 'selected' : ''}>📅 Juros Mensais no Aniversário do Aporte</option>
+          </select>
+        </label>
+
+        <!-- Live Preview -->
+        <div id="invPreviewBox" style="background:var(--verde-soft);border:1px solid #b7ded0;border-radius:8px;padding:10px 12px;font-size:12.5px;color:var(--verde-dark)">
+          Digite o valor e a data para visualizar a projeção em tempo real.
+        </div>
+      </div>
+    `,
+    dModal => {
+      const desc = dModal.querySelector('#invDesc').value.trim() || 'Aporte de Capital';
+      const catSel = dModal.querySelector('#invCatSelect').value;
+      const novaCat = dModal.querySelector('#invNovaCat').value.trim();
+      const finalCat = (catSel === '__nova__' && novaCat) ? novaCat : (catSel === '__nova__' ? 'Investimento Geral' : catSel);
+      const amount = Number(dModal.querySelector('#invAmount').value);
+      const date = dModal.querySelector('#invDate').value;
+      const monthlyRate = Number(dModal.querySelector('#invRate').value) || 10;
+      const compoundingType = dModal.querySelector('#invType').value;
+
+      if (!amount || amount <= 0) {
+        toast('Informe um valor de aporte maior que zero.');
+        return false;
+      }
+      if (!date) {
+        toast('Informe a data do aporte.');
+        return false;
+      }
+
+      if (finalCat && !investmentsState.categories.includes(finalCat)) {
+        investmentsState.categories.push(finalCat);
+      }
+
+      if (isEdit) {
+        editDep.description = desc;
+        editDep.category = finalCat;
+        editDep.amount = amount;
+        editDep.date = date;
+        editDep.monthly_rate = monthlyRate;
+        editDep.compounding_type = compoundingType;
+      } else {
+        const newDep = {
+          id: 'dep_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+          description: desc,
+          category: finalCat,
+          amount: amount,
+          date: date,
+          monthly_rate: monthlyRate,
+          compounding_type: compoundingType,
+          withdrawals: []
+        };
+        investmentsState.deposits.push(newDep);
+
+        if (window.confetti) {
+          window.confetti({ particleCount: 50, spread: 60, origin: { y: 0.7 } });
+        }
+      }
+
+      saveInvestments();
+      render();
+      toast(isEdit ? 'Aporte atualizado com sucesso!' : 'Aporte de capital cadastrado com sucesso!');
+      return true;
+    },
+    isEdit ? 'Salvar Alterações' : 'Cadastrar Aporte'
+  );
+
+  const catSelEl = d.querySelector('#invCatSelect');
+  const boxNovaCatEl = d.querySelector('#boxNovaCat');
+  catSelEl.onchange = () => {
+    boxNovaCatEl.style.display = catSelEl.value === '__nova__' ? 'block' : 'none';
+  };
+
+  const updatePreview = () => {
+    const amt = Number(d.querySelector('#invAmount').value);
+    const dt = d.querySelector('#invDate').value;
+    const rt = Number(d.querySelector('#invRate').value) || 10;
+    const tp = d.querySelector('#invType').value;
+    const box = d.querySelector('#invPreviewBox');
+
+    if (!amt || amt <= 0 || !dt) {
+      box.innerHTML = `Digite o valor e a data para visualizar a projeção em tempo real.`;
+      return;
+    }
+
+    const tempDep = {
+      amount: amt,
+      date: dt,
+      monthly_rate: rt,
+      compounding_type: tp,
+      withdrawals: isEdit && editDep ? editDep.withdrawals : []
+    };
+    const st = calculateDepositStats(tempDep, todayStr);
+    box.innerHTML = `
+      <b>Simulação até hoje (${st.daysActive} dias):</b><br>
+      Saldo acumulado: <b>${fmtBRL(st.currentValue)}</b> &nbsp;·&nbsp; Lucro de <b>+${fmtBRL(st.totalYield)}</b> (+${amt > 0 ? ((st.totalYield / amt) * 100).toFixed(1) : 0}%)<br>
+      <small style="color:var(--verde-dark);opacity:0.9">Rendendo <b>+${fmtBRL(st.dailyGain)} por dia</b>.</small>
+    `;
+  };
+
+  d.querySelector('#invAmount').oninput = updatePreview;
+  d.querySelector('#invDate').oninput = updatePreview;
+  d.querySelector('#invRate').oninput = updatePreview;
+  d.querySelector('#invType').onchange = updatePreview;
+  updatePreview();
+}
+
+function dlgInvestWithdraw(dep) {
+  if (!dep) return;
+  const todayStr = new Date().toISOString().split('T')[0];
+  const stats = calculateDepositStats(dep, todayStr);
+  const curBal = stats.currentValue;
+  const roundedBal = Math.round(curBal * 100) / 100;
+
+  const pastWiths = dep.withdrawals || [];
+  const pastWithsHTML = pastWiths.length > 0 ? `
+    <div style="border-top:1px dashed var(--line);padding-top:10px;margin-top:10px">
+      <span style="font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">Histórico de resgates anteriores neste aporte:</span>
+      <div style="display:flex;flex-direction:column;gap:5px;max-height:110px;overflow-y:auto">
+        ${pastWiths.map(w => `
+          <div style="display:flex;align-items:center;justify-content:space-between;background:#fef7ea;border:1px solid #fae6c6;padding:5px 8px;border-radius:6px;font-size:12px">
+            <span><b>-${fmtBRL(w.amount)}</b> em ${formatDateBR(w.date)} (${esc(w.description || 'Resgate')})</span>
+            <button class="btn danger" style="padding:2px 6px;font-size:11px" data-act="del-past-with" data-wid="${esc(w.id)}">Estornar</button>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  ` : '';
+
+  const d = dlgOpen(
+    'Resgatar do Aporte',
+    `Retire parte ou a totalidade do saldo acumulado deste aporte (${esc(dep.description)}). O saldo restante continuará rendendo normalmente:`,
+    `
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div style="background:#f4faf6;border:1px solid #c2e5d6;padding:12px 14px;border-radius:8px;display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <span style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase">Saldo Disponível</span>
+            <b style="display:block;font-size:20px;font-family:var(--mono);color:var(--verde)">${fmtBRL(curBal)}</b>
+          </div>
+          <span class="chip neutral" style="font-family:var(--mono);font-size:12px">Aporte inicial: ${fmtBRL(dep.amount)}</span>
+        </div>
+
+        <div>
+          <span style="font-size:12px;font-weight:600;color:var(--ink-light);display:block;margin-bottom:6px">Atalhos de resgate:</span>
+          <div style="display:flex;gap:6px">
+            <button type="button" class="invest-sim-btn" data-pct="25">25%</button>
+            <button type="button" class="invest-sim-btn" data-pct="50">50%</button>
+            <button type="button" class="invest-sim-btn" data-pct="75">75%</button>
+            <button type="button" class="invest-sim-btn" data-pct="100" style="background:#fdf0d5;color:#8f5a09;border-color:#f8d89a">100% (Total)</button>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <label class="field">
+            <span>Valor a Retirar (R$)</span>
+            <input type="number" step="0.01" min="0.01" max="${roundedBal.toFixed(2)}" id="wAmount" class="field-inp" placeholder="0,00">
+          </label>
+          <label class="field">
+            <span>Data do Resgate</span>
+            <input type="date" id="wDate" class="field-inp" value="${todayStr}">
+          </label>
+        </div>
+
+        <label class="field">
+          <span>Motivo / Descrição</span>
+          <input type="text" id="wDesc" class="field-inp" placeholder="Ex: Retirada de lucros, Compra de equipamento" value="Resgate Parcial">
+        </label>
+
+        ${pastWithsHTML}
+      </div>
+    `,
+    dModal => {
+      const amt = Number(dModal.querySelector('#wAmount').value);
+      const dt = dModal.querySelector('#wDate').value;
+      const desc = dModal.querySelector('#wDesc').value.trim() || 'Resgate Parcial';
+
+      if (!amt || amt <= 0) {
+        toast('Informe um valor de resgate maior que zero.');
+        return false;
+      }
+      if (amt > roundedBal + 0.01) {
+        toast(`O valor do resgate (${fmtBRL(amt)}) não pode exceder o saldo disponível (${fmtBRL(roundedBal)}).`);
+        return false;
+      }
+      if (!dt) {
+        toast('Informe a data do resgate.');
+        return false;
+      }
+
+      if (!Array.isArray(dep.withdrawals)) {
+        dep.withdrawals = [];
+      }
+
+      dep.withdrawals.push({
+        id: 'w_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        amount: Math.min(amt, curBal),
+        date: dt,
+        description: desc
+      });
+
+      saveInvestments();
+      render();
+      toast(`Resgate de ${fmtBRL(amt)} realizado com sucesso!`);
+      return true;
+    },
+    'Confirmar Resgate'
+  );
+
+  d.querySelectorAll('[data-pct]').forEach(btn => {
+    btn.onclick = () => {
+      const pct = Number(btn.dataset.pct);
+      const val = pct === 100 ? roundedBal : (Math.floor(curBal * (pct / 100) * 100) / 100);
+      d.querySelector('#wAmount').value = val.toFixed(2);
+    };
+  });
+
+  d.querySelectorAll('[data-act="del-past-with"]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const wid = btn.dataset.wid;
+      dep.withdrawals = dep.withdrawals.filter(w => w.id !== wid);
+      saveInvestments();
+      d.close();
+      dlgInvestWithdraw(dep);
+      toast('Resgate anterior estornado com sucesso.');
+    };
+  });
+}
+
+function dlgInvestPin() {
+  const currentPin = (investmentsState && investmentsState.pin) || '1234';
+
+  dlgOpen(
+    'Alterar PIN de Segurança',
+    'Defina uma nova senha numérica de 4 dígitos para proteger o acesso aos seus investimentos:',
+    `
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <label class="field">
+          <span>PIN Atual (4 dígitos)</span>
+          <input type="password" maxlength="4" pattern="[0-9]*" inputmode="numeric" id="pinCur" class="field-inp" placeholder="••••">
+        </label>
+        <label class="field">
+          <span>Novo PIN (4 dígitos)</span>
+          <input type="password" maxlength="4" pattern="[0-9]*" inputmode="numeric" id="pinNew" class="field-inp" placeholder="••••">
+        </label>
+        <label class="field">
+          <span>Confirmar Novo PIN</span>
+          <input type="password" maxlength="4" pattern="[0-9]*" inputmode="numeric" id="pinConf" class="field-inp" placeholder="••••">
+        </label>
+      </div>
+    `,
+    dModal => {
+      const cur = dModal.querySelector('#pinCur').value.trim();
+      const n1 = dModal.querySelector('#pinNew').value.trim();
+      const n2 = dModal.querySelector('#pinConf').value.trim();
+
+      if (cur !== currentPin) {
+        toast('O PIN atual informado está incorreto.');
+        return false;
+      }
+      if (!/^\d{4}$/.test(n1)) {
+        toast('O novo PIN deve conter exatamente 4 números.');
+        return false;
+      }
+      if (n1 !== n2) {
+        toast('A confirmação do novo PIN não confere.');
+        return false;
+      }
+
+      investmentsState.pin = n1;
+      saveInvestments();
+      toast('PIN alterado com sucesso! ✔');
+      return true;
+    },
+    'Salvar Novo PIN'
+  );
+}
+
+/* Gatilhos Secretos de Acesso à Carteira */
+let secretDotClicks = 0;
+let secretDotTimer = null;
+const secretTriggerEl = document.getElementById('secretTrigger');
+if (secretTriggerEl) {
+  secretTriggerEl.addEventListener('click', (e) => {
+    e.stopPropagation();
+    secretDotClicks++;
+    clearTimeout(secretDotTimer);
+    secretDotTimer = setTimeout(() => { secretDotClicks = 0; }, 800);
+    if (secretDotClicks >= 2) {
+      secretDotClicks = 0;
+      promptInvestUnlock();
+    }
+  });
+}
+
+window.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'I' || e.key === 'i')) {
+    e.preventDefault();
+    promptInvestUnlock();
+  }
+});
+
+function checkHashInvest() {
+  if (location.hash === '#invest' || location.hash === '#investimentos') {
+    if (!isInvestUnlocked) {
+      promptInvestUnlock();
+    } else {
+      view.tab = 'invest';
+      render();
+    }
+  }
+}
+window.addEventListener('hashchange', checkHashInvest);
 
 /* ================= INICIALIZAÇÃO ================= */
 initData();

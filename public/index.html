@@ -15,7 +15,7 @@
     <!-- Top Header -->
     <header class="top">
       <div class="brand">
-        <span class="mark">Caderneta</span><span class="dot"></span>
+        <span class="mark">Caderneta</span><span class="dot" id="secretTrigger" title="Caderneta"></span>
         <small>contas de casa em ordem</small>
       </div>
       <div class="top-actions">
@@ -81,6 +81,7 @@
       <button class="tab" data-tab="fixas">Contas fixas <span class="n" id="nFixas">0</span></button>
       <button class="tab" data-tab="vars">Variáveis <span class="n" id="nVars">0</span></button>
       <button class="tab" data-tab="cats">Categorias <span class="n" id="nCats">0</span></button>
+      <button class="tab tab-invest" id="tabInvest" data-tab="invest" style="display:none;">📈 Investimentos 🔒</button>
     </nav>
 
     <!-- Conteúdo Dinâmico -->
@@ -98,6 +99,8 @@
 
   <!-- Supabase JS Client para Realtime WebSockets -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Confetti para novos aportes -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
   <!-- Script Principal -->
   <script src="app.js"></script>
 </body>
